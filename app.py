@@ -42,21 +42,11 @@ elif menu == "📝 Input Warga Baru":
         
         if submitted:
             if nama and alamat:
-                # Link Dasar Google Form Juragan
-                base_url = "https://docs.google.com/forms/d/e/1FAIpQLSeqB63qYvhQR_mYRL9xoBH9d5ZAxEzlO1TOBJYh6qDdDn3szw/viewform?"
+                # Link ini adalah link Form Juragan yang 'Bersih'
+                link_form_manual = "https://docs.google.com/forms/d/e/1FAIpQLSeqB63qYvhQR_mYRL9xoBH9d5ZAxEzlO1TOBJYh6qDdDn3szw/viewform"
                 
-                # Parameter dari Link Sakti
-                params = {
-                    "entry.2014417019": nama,
-                    "entry.1185567798": alamat,
-                    "entry.1131533858": status,
-                    "entry.1516880491": telepon
-                }
-                
-                final_url = base_url + urllib.parse.urlencode(params)
-                
-                st.success(f"✅ Data {nama} siap dikirim!")
-                st.link_button("KLIK DISINI UNTUK SIMPAN KE DATABASE", final_url)
-                st.info("Setelah klik, tekan tombol 'Kirim' di halaman Google Form ya, Bos!")
+                st.success(f"✅ Data {nama} sudah siap di sistem.")
+                st.link_button("KLIK DISINI UNTUK ISI DATA", link_form_manual)
+                st.info("Setelah klik, silakan isi Nama & Alamat di form yang muncul, lalu klik Kirim.")
             else:
-                st.error("Nama dan Alamat wajib diisi!")
+                st.error("Nama dan Alamat harus diisi, Bos!")
