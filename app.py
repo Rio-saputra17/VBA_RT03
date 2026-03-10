@@ -1,34 +1,23 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
-st.set_page_config(page_title="Sistem RT 03", layout="wide")
+st.set_page_config(page_title="RT 03 Monitoring", layout="wide")
 
-# Judul Utama
-st.title("🏡 Sistem Administrasi RT 03")
+# Link Google Sheets Juragan yang sudah dalam format CSV
+sheet_id = "1t1zxEQINPu7lPiPfEmlWLK8NWHjtt4cQdamsdINHfW0"
+url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid=0"
 
-# --- KONEKSI ---
+st.title("🏡 Sistem RT 03 - Koneksi Langsung")
+
 try:
-    # Kita paksa ambil koneksi dari secrets
-    conn = st.connection("gsheets", type=GSheetsConnection)
+    # Kita coba tarik data secara langsung tanpa lewat 'Secrets'
+    df = pd.read_csv(url)
     
-    # Kita coba baca tab "Warga"
-    df_warga = conn.read(worksheet="Warga")
-    
-    # Jika berhasil, tampilkan data
-    st.success("✅ Berhasil Terhubung ke Google Sheets!")
-    
-    menu = st.sidebar.radio("Pilih Menu", ["Data Warga", "Laporan Kas"])
-    
-    if menu == "Data Warga":
-        st.header("👥 Daftar Penduduk")
-        st.dataframe(df_warga, use_container_width=True)
-        
+    st.success("✅ KONEKSI BERHASIL!")
+    st.write("Daftar Warga:")
+    st.dataframe(df, use_container_width=True)
+
 except Exception as e:
-    st.error("❌ Waduh, Masih Belum Konek, Bos!")
-    st.info(f"Pesan Error dari Sistem: {e}")
-    st.warning("Cek 2 hal ini: \n1. Pastikan di Secrets sudah ada [connections.gsheets] \n2. Pastikan link di Secrets benar.")
-    
-    # Tombol Refresh Paksa
-    if st.button("Coba Hubungkan Ulang"):
-        st.rerun()
+    st.error("❌ Masih Gagal Konek, Bos!")
+    st.info(f"Pesan Error: {e}")
+    st.warning("Coba cek apakah Google Sheets-nya sudah di-Publish ke Web?")
