@@ -13,7 +13,7 @@ def login():
         st.subheader("🔐 Login Sistem RT 03")
         pw = st.text_input("Password Admin", type="password")
         if st.button("Masuk"):
-            if pw == "123": # Silakan ganti password di sini
+            if pw == "123":
                 st.session_state.logged_in = True
                 st.rerun()
             else:
@@ -25,7 +25,7 @@ if login():
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
         
-        # Baca data sesuai nama sheet: Warga, Data Pembayaran, Kas RT
+        # Baca data sesuai nama sheet di gambar: Warga, Data Pembayaran, Kas RT
         df_warga = conn.read(worksheet="Warga", ttl="0")
         df_bayar = conn.read(worksheet="Data Pembayaran", ttl="0")
         df_kas = conn.read(worksheet="Kas RT", ttl="0")
@@ -124,7 +124,8 @@ if login():
             st.dataframe(df_kas, use_container_width=True)
 
     except Exception as e:
-        st.error("⚠️ Masalah Koneksi/Struktur Sheets")
+        st.error("⚠️ Masalah Koneksi atau Struktur Sheets!")
+        st.write("Pastikan di Google Sheets ada tab: **Warga**, **Data Pembayaran**, dan **Kas RT**.")
         st.code(str(e))
 
     if st.sidebar.button("Keluar"):
