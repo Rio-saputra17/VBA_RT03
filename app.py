@@ -10,7 +10,7 @@ S_ID = "1t1zxEQINPu7lPiPfEmlWLK8NWHjtt4cQdamsdINHfW0"
 URL_W = f"https://docs.google.com/spreadsheets/d/{S_ID}/export?format=csv&gid=0"
 URL_I = f"https://docs.google.com/spreadsheets/d/{S_ID}/export?format=csv&gid=1334887308"
 URL_K = f"https://docs.google.com/spreadsheets/d/{S_ID}/export?format=csv&gid=249257041"
-URL_J = "https://script.google.com/macros/s/AKfycbxPdXxvwsEO2u3KMJpSFOUrd8b36xRO372DGf70rfgw8p_MaEPTHw74XIc7ZDV0s0m8/exec" # <--- GANTI INI
+URL_J = "https://script.google.com/macros/s/AKfycbxI9d5S3YZXO6VT2S6Hec6FpVU_2xF52w3DwVdzgF5L0-UUebtvnqymVU-hkTNG356L/exec" # <--- GANTI INI
 
 # Cek Login Sederhana
 if 'admin' not in st.session_state: st.session_state['admin'] = False
