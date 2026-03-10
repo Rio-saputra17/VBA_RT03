@@ -3,17 +3,17 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
 
-# Konfigurasi Layar HP
-st.set_page_config(page_title="RT03 VBA", layout="wide")
+# Konfigurasi Tampilan Mobile
+st.set_page_config(page_title="Update RT 03", layout="wide")
 
 def login():
     if "logged_in" not in st.session_state:
         st.session_state.logged_in = False
     if not st.session_state.logged_in:
-        st.subheader("🔐 Login Admin RT 03")
-        pw = st.text_input("Password", type="password")
+        st.subheader("🔐 Login Sistem RT 03")
+        pw = st.text_input("Password Admin", type="password")
         if st.button("Masuk"):
-            if pw == "123": # Silakan ganti passwordnya di sini
+            if pw == "123": # Ganti password di sini
                 st.session_state.logged_in = True
                 st.rerun()
             else:
@@ -25,94 +25,81 @@ if login():
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
         
-        # Baca data sesuai nama sheet di gambar
+        # Baca data sesuai nama sheet di gambar terakhir (Warga, Data Pembayaran, Kas RT)
         df_warga = conn.read(worksheet="Warga", ttl="0")
-        df_iuran = conn.read(worksheet="Iuran", ttl="0")
-        df_kas = conn.read(worksheet="Kas", ttl="0")
+        df_bayar = conn.read(worksheet="Data Pembayaran", ttl="0")
+        df_kas = conn.read(worksheet="Kas RT", ttl="0")
 
-        st.sidebar.title("RT03 VBA")
-        menu = st.sidebar.radio("Navigasi", ["Data Warga", "Input Iuran", "Data Iuran", "Rekap Kas", "Edit Data Warga"])
+        st.sidebar.title("Sistem RT 03")
+        menu = st.sidebar.radio("Navigasi Menu", 
+            ["Update Warga", "Input Iuran", "History Pembayaran", "Kas RT (Keuangan)"])
 
-        if menu == "Data Warga":
-            st.header("👥 Data Warga")
-            st.dataframe(df_warga, use_container_width=True)
+        # --- 1. MENU UPDATE WARGA (TAMBAH & EDIT) ---
+        if menu == "Update Warga":
+            st.header("👥 Manajemen Data Warga")
+            tab1, tab2 = st.tabs(["Tambah Warga Baru", "Edit/Hapus Warga"])
+            
+            with tab1:
+                with st.form("form_tambah"):
+                    n_nama = st.text_input("Nama Warga")
+                    n_alamat = st.text_input("Alamat Rumah")
+                    n_status = st.selectbox("Status Rumah", ["Pribadi", "Kontrak"])
+                    n_kontak = st.text_input("Kontak (No Telepon)")
+                    if st.form_submit_button("Simpan Warga"):
+                        new_data = pd.DataFrame([{"Nama": n_nama, "Alamat": n_alamat, "Status": n_status, "Kontak": n_kontak}])
+                        df_updated = pd.concat([df_warga, new_data], ignore_index=True)
+                        conn.update(worksheet="Warga", data=df_updated)
+                        st.success("Warga Berhasil Ditambahkan!")
+                        st.rerun()
 
+            with tab2:
+                st.write("Edit data langsung di tabel bawah:")
+                edited_w = st.data_editor(df_warga, use_container_width=True, num_rows="dynamic")
+                if st.button("Simpan Perubahan Data"):
+                    conn.update(worksheet="Warga", data=edited_w)
+                    st.success("Data Warga Diperbarui!")
+
+        # --- 2. MENU INPUT IURAN (OTOMATIS SINKRON KAS) ---
         elif menu == "Input Iuran":
-            st.header("💰 Input Iuran Otomatis")
-            with st.form("input_iuran", clear_on_submit=True):
-                # Ambil data dari sheet Warga agar sinkron
-                nama_warga = st.selectbox("Pilih Nama", df_warga['Nama'].unique())
-                # Cari alamat otomatis berdasarkan nama
-                alamat_warga = df_warga[df_warga['Nama'] == nama_warga]['Alamat'].values[0]
-                
-                bln = st.selectbox("Bulan", ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"])
-                thn = st.selectbox("Tahun", [2025, 2026, 2027])
-                jml = st.number_input("Jumlah Bayar (Rp)", value=20000, step=5000)
-                
-                if st.form_submit_button("Simpan & Sinkronkan"):
-                    # 1. Update Sheet Iuran (Tambah Baris Baru)
-                    new_iuran = pd.DataFrame([{
-                        "Nama": nama_warga,
-                        "Alamat": alamat_warga,
-                        "Bulan": bln,
-                        "Tahun": thn,
-                        "Keterangan": "lunas"
-                    }])
-                    df_iuran_new = pd.concat([df_iuran, new_iuran], ignore_index=True)
-                    conn.update(worksheet="Iuran", data=df_iuran_new)
+            st.header("💰 Input Pembayaran Iuran")
+            if df_warga.empty:
+                st.warning("Data warga masih kosong. Isi dulu di menu Update Warga.")
+            else:
+                with st.form("form_bayar", clear_on_submit=True):
+                    sel_nama = st.selectbox("Pilih Nama Warga", df_warga['Nama'].unique())
+                    sel_bln = st.selectbox("Bulan/Tahun", [f"{b} 2026" for b in ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]])
+                    sel_nominal = st.number_input("Jumlah Uang (Rp)", value=20000, step=5000)
                     
-                    # 2. Update Sheet Kas (Otomatis Masuk)
-                    # Hitung saldo terakhir
-                    saldo_akhir = pd.to_numeric(df_kas['Saldo'], errors='coerce').fillna(0).last_valid_index()
-                    if saldo_akhir is not None:
-                        last_saldo = df_kas.loc[saldo_akhir, 'Saldo']
-                    else:
-                        last_saldo = 0
-                    
-                    new_kas = pd.DataFrame([{
-                        "Tanggal": datetime.now().strftime("%d/%m/%Y"),
-                        "Masuk": jml,
-                        "Keluar": 0,
-                        "Keterangan": f"Iuran {bln} {thn} - {nama_warga}",
-                        "Saldo": last_saldo + jml
-                    }])
-                    df_kas_new = pd.concat([df_kas, new_kas], ignore_index=True)
-                    conn.update(worksheet="Kas", data=df_kas_new)
-                    
-                    st.success(f"Berhasil! Data {nama_warga} tersimpan dan Kas bertambah.")
-                    st.balloons()
+                    if st.form_submit_button("Proses Pembayaran"):
+                        # Logika Update Data Pembayaran
+                        new_iuran = pd.DataFrame([{"Nama": sel_nama, "Bulan/Tahun": sel_bln, "Status": "Lunas"}])
+                        df_bayar_up = pd.concat([df_bayar, new_iuran], ignore_index=True)
+                        conn.update(worksheet="Data Pembayaran", data=df_bayar_up)
+                        
+                        # Logika Sinkronisasi Kas RT
+                        # Ambil saldo terakhir
+                        try:
+                            last_saldo = pd.to_numeric(df_kas['Sisa Saldo']).iloc[-1]
+                        except:
+                            last_saldo = 0
+                            
+                        new_kas = pd.DataFrame([{
+                            "Masuk": sel_nominal, 
+                            "Keluar": 0, 
+                            "Keterangan": f"Iuran {sel_bln} - {sel_nama}", 
+                            "Sisa Saldo": last_saldo + sel_nominal
+                        }])
+                        df_kas_up = pd.concat([df_kas, new_kas], ignore_index=True)
+                        conn.update(worksheet="Kas RT", data=df_kas_up)
+                        
+                        st.success(f"Berhasil! {sel_nama} Lunas {sel_bln}. Kas otomatis bertambah.")
 
-        elif menu == "Data Iuran":
-            st.header("📊 Data Iuran Warga")
-            st.dataframe(df_iuran, use_container_width=True)
+        # --- 3. MENU HISTORY PEMBAYARAN (CEK BULAN/TAHUN) ---
+        elif menu == "History Pembayaran":
+            st.header("📊 History Pembayaran Iuran")
+            st.write("Gunakan kotak pencarian di tabel untuk cek per nama:")
+            st.dataframe(df_bayar, use_container_width=True)
 
-        elif menu == "Rekap Kas":
-            st.header("📈 Laporan Keuangan (Kas)")
-            # Hitung total dari kolom Masuk dan Keluar
-            total_m = pd.to_numeric(df_kas['Masuk'], errors='coerce').sum()
-            total_k = pd.to_numeric(df_kas['Keluar'], errors='coerce').sum()
-            saldo_skrg = total_m - total_k
-            
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Total Masuk", f"Rp {total_m:,.0f}")
-            c2.metric("Total Keluar", f"Rp {total_k:,.0f}")
-            c3.metric("Saldo Kas", f"Rp {saldo_skrg:,.0f}")
-            
-            st.divider()
-            st.dataframe(df_kas, use_container_width=True)
-
-        elif menu == "Edit Data Warga":
-            st.header("📝 Edit Data Warga")
-            st.info("Edit langsung di tabel bawah dan tekan simpan.")
-            edited = st.data_editor(df_warga, use_container_width=True, num_rows="dynamic")
-            if st.button("Simpan Perubahan Warga"):
-                conn.update(worksheet="Warga", data=edited)
-                st.success("Data Warga diperbarui!")
-                st.rerun()
-    except Exception as e:
-        st.error("Waduh, koneksi ke Google Sheets terputus atau nama kolom ada yang beda.")
-        st.code(str(e))
-
-    if st.sidebar.button("Keluar"):
-        st.session_state.logged_in = False
-        st.rerun()
+        # --- 4. MENU KAS RT (KEUANGAN & EDIT KAS) ---
+        elif menu == "Kas RT (Keuangan)":
+            st.header("📈 Laporan Kas & Sisa Saldo
