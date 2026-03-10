@@ -6,8 +6,10 @@ st.set_page_config(page_title="Sistem RT 03", layout="wide", page_icon="🏡")
 
 # --- KONFIGURASI ---
 SHEET_ID = "1t1zxEQINPu7lPiPfEmlWLK8NWHjtt4cQdamsdINHfW0"
-URL_BACA = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
-URL_JEMBATAN = "https://script.google.com/macros/s/AKfycbwsYpeCMHnql1nIHTAZF34RGEsbWNtEl3xYIvdSnY13nvWmmwhlLb0LmpdJT1Dfss5J/exec" # <--- GANTI DENGAN LINK BARU
+URL_WARGA = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
+URL_IURAN = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=1334887308" # Ganti GID Iuran
+URL_KAS = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=249257041" # Ganti GID Kas
+URL_JEMBATAN = "https://script.google.com/macros/s/AKfycbyKMxrINZXZpxRyn-LV8HWoYULlE8fB-5slUBrjEkjVOA5ImnFPwW_ES4ycdSYqHQMR/exec"
 
 PASSWORD_RT = "rt03oke"
 
@@ -16,77 +18,90 @@ if 'logged_in' not in st.session_state:
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.title("🏡 Menu RT 03")
+    st.title("🏡 Admin RT 03")
     if not st.session_state['logged_in']:
-        pwd = st.text_input("🔑 Login Admin", type="password")
+        pwd = st.text_input("🔑 Login", type="password")
         if st.button("Masuk"):
             if pwd == PASSWORD_RT:
                 st.session_state['logged_in'] = True
                 st.rerun()
     else:
         st.success("Admin Aktif")
-        if st.button("Logout"):
+        if st.button("Keluar"):
             st.session_state['logged_in'] = False
             st.rerun()
     
     st.markdown("---")
-    menu = st.radio("Pilih Navigasi:", ["👥 Lihat Warga", "📝 Tambah Warga", "🛠️ Edit Data", "📊 Statistik"])
+    menu = st.radio("Pilih Menu:", ["👥 Data Warga", "💳 Status Iuran", "💰 Kas Keuangan"])
 
-# --- MENU: LIHAT ---
-if menu == "👥 Lihat Warga":
-    st.header("Daftar Warga")
-    df = pd.read_csv(URL_BACA)
+# --- MENU: DATA WARGA ---
+if menu == "👥 Data Warga":
+    st.header("👥 Data Penduduk")
+    df = pd.read_csv(URL_WARGA)
     st.dataframe(df, use_container_width=True, hide_index=True)
 
-# --- MENU: TAMBAH ---
-elif menu == "📝 Tambah Warga":
-    st.header("Tambah Warga Baru")
+# --- MENU: IURAN (Sesuai Foto 11723) ---
+elif menu == "💳 Status Iuran":
+    st.title("💳 Rekap Iuran Warga")
+    
+    # Input Iuran (Admin)
     if st.session_state['logged_in']:
-        with st.form("tambah_form"):
-            n = st.text_input("Nama")
-            a = st.text_input("Alamat")
-            s = st.selectbox("Status", ["Warga Tetap", "Kontrak", "Kos"])
-            t = st.text_input("WhatsApp")
-            if st.form_submit_button("Simpan"):
-                res = requests.post(URL_JEMBATAN, json={"action":"tambah", "nama":n, "alamat":a, "status":s, "telepon":t})
-                st.success("Berhasil ditambah!")
-    else:
-        st.warning("Silakan login dulu, Bos.")
+        with st.expander("➕ Catat Pembayaran Baru"):
+            df_w = pd.read_csv(URL_WARGA)
+            with st.form("form_iuran"):
+                nama_p = st.selectbox("Nama Warga", df_w['Nama'].tolist())
+                bulan = st.selectbox("Untuk Bulan", ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"])
+                tahun = st.selectbox("Tahun", ["2025", "2026"])
+                ket = st.selectbox("Keterangan", ["Lunas", "Belum Lunas"])
+                if st.form_submit_button("Simpan Iuran"):
+                    alm = df_w[df_w['Nama'] == nama_p]['Alamat'].values[0]
+                    requests.post(URL_JEMBATAN, json={"action":"input_iuran", "nama":nama_p, "alamat":alm, "bulan":bulan, "tahun":tahun, "keterangan":ket})
+                    st.success("Tercatat!")
+                    st.rerun()
 
-# --- MENU: EDIT ---
-elif menu == "🛠️ Edit Data":
-    st.header("Edit Data Warga")
+    st.markdown("---")
+    try:
+        df_i = pd.read_csv(URL_IURAN)
+        st.subheader("Daftar Warga Sudah Bayar")
+        st.table(df_i)
+    except:
+        st.info("Belum ada data iuran.")
+
+# --- MENU: KAS (Sesuai Foto 11724) ---
+elif menu == "💰 Kas Keuangan":
+    st.title("💰 Buku Kas RT 03")
+    
+    # Tampilan Saldo Otomatis
+    try:
+        df_k = pd.read_csv(URL_KAS)
+        df_k['Masuk'] = pd.to_numeric(df_k['Masuk'], errors='coerce').fillna(0)
+        df_k['Keluar'] = pd.to_numeric(df_k['Keluar'], errors='coerce').fillna(0)
+        
+        total_masuk = df_k['Masuk'].sum()
+        total_keluar = df_k['Keluar'].sum()
+        saldo_akhir = total_masuk - total_keluar
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total Masuk", f"Rp {total_masuk:,.0f}")
+        c2.metric("Total Keluar", f"Rp {total_keluar:,.0f}")
+        c3.metric("Sisa Saldo", f"Rp {saldo_akhir:,.0f}", delta_color="normal")
+
+        st.markdown("---")
+        st.subheader("Riwayat Transaksi")
+        st.dataframe(df_k, use_container_width=True, hide_index=True)
+    except:
+        st.info("Belum ada transaksi kas.")
+
+    # Input Kas (Admin)
     if st.session_state['logged_in']:
-        try:
-            df = pd.read_csv(URL_BACA)
-            
-            # Paksa semua nama kolom jadi huruf kecil & hapus spasi
-            df.columns = df.columns.str.strip().str.capitalize() 
-            
-            if 'Nama' in df.columns:
-                daftar_nama = df['Nama'].dropna().unique().tolist()
-                pilihan = st.selectbox("Pilih warga yang akan di-edit:", ["-- Pilih --"] + daftar_nama)
-                
-                if pilihan != "-- Pilih --":
-                    data = df[df['Nama'] == pilihan].iloc[0]
-                    with st.form("edit_form"):
-                        new_n = st.text_input("Nama Lengkap", value=data['Nama'])
-                        new_a = st.text_input("Alamat", value=data['Alamat'])
-                        # Pastikan pilihan status sesuai dengan yang ada di Sheets
-                        status_list = ["Warga Tetap", "Kontrak", "Kos"]
-                        current_status = data['Status'] if data['Status'] in status_list else status_list[0]
-                        
-                        new_s = st.selectbox("Status", status_list, index=status_list.index(current_status))
-                        new_t = st.text_input("WhatsApp", value=str(data['Telepon']))
-                        
-                        if st.form_submit_button("Update Data"):
-                            payload = {"action":"edit", "nama_lama":pilihan, "nama":new_n, "alamat":new_a, "status":new_s, "telepon":new_t}
-                            requests.post(URL_JEMBATAN, json=payload)
-                            st.success("Data Berhasil Diperbarui!")
-                            st.rerun()
-            else:
-                st.error("Kolom 'Nama' tidak ditemukan di Sheets. Cek judul kolom di Google Sheets Juragan!")
-        except Exception as e:
-            st.error(f"Error: {e}")
-    else:
-        st.warning("Hanya Admin yang bisa edit data.")
+        with st.expander("➕ Catat Transaksi Kas (Masuk/Keluar)"):
+            with st.form("form_kas"):
+                tipe = st.radio("Tipe", ["Masuk", "Keluar"], horizontal=True)
+                jml = st.number_input("Nominal (Rp)", min_value=0, step=1000)
+                ket_k = st.text_input("Keterangan Penggunaan/Sumber Uang")
+                if st.form_submit_button("Simpan Kas"):
+                    m = jml if tipe == "Masuk" else 0
+                    k = jml if tipe == "Keluar" else 0
+                    requests.post(URL_JEMBATAN, json={"action":"input_kas", "masuk":m, "keluar":k, "keterangan":ket_k})
+                    st.success("Kas Terupdate!")
+                    st.rerun()
