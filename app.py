@@ -53,31 +53,40 @@ elif menu == "📝 Tambah Warga":
     else:
         st.warning("Silakan login dulu, Bos.")
 
-# --- MENU: EDIT (Sakti!) ---
+# --- MENU: EDIT ---
 elif menu == "🛠️ Edit Data":
     st.header("Edit Data Warga")
     if st.session_state['logged_in']:
-        df = pd.read_csv(URL_BACA)
-        pilihan = st.selectbox("Pilih warga yang akan di-edit:", ["-- Pilih --"] + df['Nama'].tolist())
-        
-        if pilihan != "-- Pilih --":
-            data = df[df['Nama'] == pilihan].iloc[0]
-            with st.form("edit_form"):
-                new_n = st.text_input("Nama Lengkap", value=data['Nama'])
-                new_a = st.text_input("Alamat", value=data['Alamat'])
-                new_s = st.selectbox("Status", ["Warga Tetap", "Kontrak", "Kos"], index=["Warga Tetap", "Kontrak", "Kos"].index(data['Status']))
-                new_t = st.text_input("WhatsApp", value=str(data['Telepon']))
+        try:
+            df = pd.read_csv(URL_BACA)
+            
+            # Paksa semua nama kolom jadi huruf kecil & hapus spasi
+            df.columns = df.columns.str.strip().str.capitalize() 
+            
+            if 'Nama' in df.columns:
+                daftar_nama = df['Nama'].dropna().unique().tolist()
+                pilihan = st.selectbox("Pilih warga yang akan di-edit:", ["-- Pilih --"] + daftar_nama)
                 
-                if st.form_submit_button("Update Data"):
-                    payload = {"action":"edit", "nama_lama":pilihan, "nama":new_n, "alamat":new_a, "status":new_s, "telepon":new_t}
-                    requests.post(URL_JEMBATAN, json=payload)
-                    st.success("Data Berhasil Diperbarui!")
-                    st.rerun()
+                if pilihan != "-- Pilih --":
+                    data = df[df['Nama'] == pilihan].iloc[0]
+                    with st.form("edit_form"):
+                        new_n = st.text_input("Nama Lengkap", value=data['Nama'])
+                        new_a = st.text_input("Alamat", value=data['Alamat'])
+                        # Pastikan pilihan status sesuai dengan yang ada di Sheets
+                        status_list = ["Warga Tetap", "Kontrak", "Kos"]
+                        current_status = data['Status'] if data['Status'] in status_list else status_list[0]
+                        
+                        new_s = st.selectbox("Status", status_list, index=status_list.index(current_status))
+                        new_t = st.text_input("WhatsApp", value=str(data['Telepon']))
+                        
+                        if st.form_submit_button("Update Data"):
+                            payload = {"action":"edit", "nama_lama":pilihan, "nama":new_n, "alamat":new_a, "status":new_s, "telepon":new_t}
+                            requests.post(URL_JEMBATAN, json=payload)
+                            st.success("Data Berhasil Diperbarui!")
+                            st.rerun()
+            else:
+                st.error("Kolom 'Nama' tidak ditemukan di Sheets. Cek judul kolom di Google Sheets Juragan!")
+        except Exception as e:
+            st.error(f"Error: {e}")
     else:
         st.warning("Hanya Admin yang bisa edit data.")
-
-# --- MENU: STATISTIK ---
-elif menu == "📊 Statistik":
-    st.header("Laporan Statistik")
-    df = pd.read_csv(URL_BACA)
-    st.bar_chart(df['Status'].value_counts())
