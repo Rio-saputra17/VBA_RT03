@@ -37,28 +37,33 @@ else:
     else:
         menu = st.sidebar.radio("Navigasi", ["WARGA", "IURAN BULANAN", "KAS RT"])
 
-    # --- MENU 1: WARGA ---
+        # --- MENU 1: WARGA ---
     if menu == "WARGA":
         st.header("📋 Data Warga RT 03")
         search = st.text_input("🔍 Cari Nama Warga (Otomatis)...").lower()
         
-        # Ambil data warga & anggota keluarga
-        res_w = supabase.table("warga").select("*, anggota_keluarga(*)").execute()
+        # GANTI BARIS INI (Baris 48-an):
+        res_w = supabase.table("warga").select("*").execute()
         df_w = pd.DataFrame(res_w.data)
 
         if not df_w.empty:
             if search:
-                df_w = df_w[df_w['nama_kk'].str.lower().contains(search)]
+                df_w = df_w[df_w['nama_kk'].str.lower().str.contains(search)]
             
             for i, row in df_w.iterrows():
                 with st.expander(f"👤 {row['nama_kk']} - {row['alamat']}"):
                     st.write(f"**Status:** {row['status_rumah']} | **Kontak:** {row['kontak']}")
                     if role == "Admin": st.write(f"**NIK:** {row['nik']}")
                     
-                    st.write(f"**Jumlah Keluarga:** {row['jml_anggota']}")
-                    if row['anggota_keluarga']:
-                        for agg in row['anggota_keluarga']:
+                    # Ambil data keluarga secara terpisah biar nggak error API
+                    res_agg = supabase.table("anggota_keluarga").select("*").eq("id_kk", row["id"]).execute()
+                    if res_agg.data:
+                        st.write(f"**Anggota Keluarga ({len(res_agg.data)}):**")
+                        for agg in res_agg.data:
                             st.write(f"- {agg['nama_anggota']} ({agg['hubungan']})")
+                    else:
+                        st.write("Belum ada data anggota keluarga.")
+
             
             # FITUR DOWNLOAD DATA WARGA
             st.download_button("📥 Download Data Warga", df_w.to_csv(index=False), "data_warga.csv", "text/csv")
