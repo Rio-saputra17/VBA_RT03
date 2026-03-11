@@ -40,7 +40,7 @@ else:
     
     menu = st.sidebar.radio("Navigasi", ["DASHBOARD", "WARGA", "IURAN BULANAN", "KAS RT", "INPUT PEMBAYARAN", "TAMBAH/EDIT DATA"] if role == "Admin" else ["DASHBOARD", "WARGA", "IURAN BULANAN", "KAS RT"])
 
-    # --- MENU DASHBOARD ---
+    # --- MENU 0: DASHBOARD ---
     if menu == "DASHBOARD":
         st.header("📊 Ringkasan Kas & Iuran")
         res_k = supabase.table("kas_rt").select("*").execute()
@@ -53,22 +53,66 @@ else:
             c1.metric("Total Saldo", f"Rp {masuk-keluar:,}")
             c2.metric("Pemasukan", f"Rp {masuk:,}")
             c3.metric("Pengeluaran", f"Rp {keluar:,}")
+            st.divider()
+            st.info("Pilih menu di samping untuk melihat detail data.")
 
-    # --- MENU WARGA ---
+    # --- MENU 1: WARGA (URUT ABJAD ALAMAT) ---
     elif menu == "WARGA":
         st.header("📋 Data Warga RT 03")
         search = st.text_input("🔍 Cari Nama Warga...").lower()
-        res_w = supabase.table("warga").select("*").order("nama_kk").execute()
+        # Perbaikan: Diurutkan berdasarkan kolom ALAMAT
+        res_w = supabase.table("warga").select("*").order("alamat").execute()
         df_w = pd.DataFrame(res_w.data)
         if not df_w.empty:
             if search:
                 df_w = df_w[df_w['nama_kk'].str.lower().str.contains(search)]
-            st.dataframe(df_w, use_container_width=True)
+            
+            if role == "Admin":
+                st.download_button(label="📥 Download Data Warga (Excel)", data=to_excel(df_w), file_name='data_warga_rt03.xlsx')
+            
+            for i, row in df_w.iterrows():
+                with st.expander(f"🏠 {row['alamat']} | 👤 {row['nama_kk']}"):
+                    st.write(f"**Status:** {row['status_rumah']} | **Kontak:** {row['kontak']}")
+                    if role == "Admin": st.write(f"**NIK:** {row['nik']}")
+                    # Tampilkan anggota keluarga jika ada
+                    ak = row.get('anggota_keluarga', [])
+                    if ak:
+                        st.write("**Anggota Keluarga:**")
+                        for member in ak:
+                            st.write(f"- {member['nama']} ({member['status']})")
 
-    # --- MENU INPUT PEMBAYARAN ---
+    # --- MENU 2: IURAN BULANAN (AKTIF KEMBALI) ---
+    elif menu == "IURAN BULANAN":
+        st.header("💰 History Iuran Bulanan")
+        res_i = supabase.table("iuran").select("*").order("created_at", desc=True).execute()
+        df_i = pd.DataFrame(res_i.data)
+        if not df_i.empty:
+            st.dataframe(df_i, use_container_width=True)
+            st.download_button(label="📥 Download Excel", data=to_excel(df_i), file_name='history_iuran.xlsx')
+        else:
+            st.info("Belum ada data iuran.")
+
+    # --- MENU 3: KAS RT (AKTIF KEMBALI) ---
+    elif menu == "KAS RT":
+        st.header("📊 Laporan Kas RT")
+        res_k = supabase.table("kas_rt").select("*").order("created_at", desc=True).execute()
+        df_k = pd.DataFrame(res_k.data)
+        if not df_k.empty:
+            masuk = df_k[df_k['jenis'] == 'Masuk']['jumlah'].sum()
+            keluar = df_k[df_k['jenis'] == 'Keluar']['jumlah'].sum()
+            col1, col2 = st.columns(2)
+            col1.metric("Total Masuk", f"Rp {masuk:,}")
+            col2.metric("Total Keluar", f"Rp {keluar:,}")
+            st.divider()
+            st.table(df_k[['created_at', 'jenis', 'jumlah', 'keterangan']].head(20))
+        else:
+            st.info("Belum ada data kas.")
+
+    # --- MENU 4: INPUT PEMBAYARAN ---
     elif menu == "INPUT PEMBAYARAN":
         st.header("💸 Input Pembayaran")
         w_list = supabase.table("warga").select("nama_kk").execute()
+        # Form otomatis bersih saat rerun
         with st.form("form_bayar", clear_on_submit=True):
             pw = st.selectbox("Pilih Warga", [w['nama_kk'] for w in w_list.data])
             bln = st.selectbox("Bulan", ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"])
@@ -79,15 +123,14 @@ else:
                 supabase.table("iuran").insert({"nama_warga": pw, "periode": f"{bln} {thn}", "status": "Lunas", "keterangan": kat}).execute()
                 supabase.table("kas_rt").insert({"jenis": "Masuk", "jumlah": nom, "keterangan": f"{kat} - {pw} ({bln} {thn})"}).execute()
                 st.success("Tersimpan!")
-                st.rerun()
+                st.rerun() # Membersihkan kolom
 
-    # --- MENU TAMBAH/EDIT DATA ---
+    # --- MENU 5: TAMBAH/EDIT DATA ---
     elif menu == "TAMBAH/EDIT DATA":
         tab1, tab2, tab3 = st.tabs(["➕ Tambah Warga", "👥 Kelola Warga", "📑 Koreksi Iuran/Kas"])
         
         with tab1:
             st.header("📝 Tambah Warga Baru")
-            # BAGIAN INI DIKELUARKAN DARI FORM AGAR ENTER BERFUNGSI
             n_kk = st.text_input("Nama Kepala Keluarga (KK)")
             n_nik = st.text_input("NIK Kepala Keluarga")
             n_alm = st.text_input("Alamat")
@@ -96,33 +139,22 @@ else:
             
             st.divider()
             st.subheader("👨‍👩‍👧‍👦 Data Anggota Keluarga")
-            st.info("💡 Isi jumlah lalu tekan **ENTER** di keyboard HP agar kolom nama muncul.")
             jml_kel = st.number_input("Jumlah Anggota Keluarga (Selain KK)", min_value=0, step=1, value=0)
             
-            # List untuk menampung input dinamis
             anggota_list = []
-            if jml_kel > 0:
-                for i in range(int(jml_kel)):
-                    col_a, col_b = st.columns(2)
-                    na = col_a.text_input(f"Nama Anggota {i+1}", key=f"n_new_{i}")
-                    sa = col_b.selectbox(f"Status Anggota {i+1}", ["Istri", "Anak", "Orang Tua", "Saudara", "Lainnya"], key=f"s_new_{i}")
-                    if na:
-                        anggota_list.append({"nama": na, "status": sa})
+            for i in range(int(jml_kel)):
+                col_a, col_b = st.columns(2)
+                na = col_a.text_input(f"Nama Anggota {i+1}", key=f"n_new_{i}")
+                sa = col_b.selectbox(f"Status Anggota {i+1}", ["Istri", "Anak", "Orang Tua", "Saudara", "Lainnya"], key=f"s_new_{i}")
+                if na: anggota_list.append({"nama": na, "status": sa})
             
             if st.button("💾 Simpan Warga Baru"):
-                if n_kk and n_nik:
-                    supabase.table("warga").insert({
-                        "nama_kk": n_kk, 
-                        "nik": n_nik, 
-                        "alamat": n_alm, 
-                        "status_rumah": n_sts, 
-                        "kontak": n_kon, 
-                        "anggota_keluarga": anggota_list
-                    }).execute()
+                if n_kk:
+                    supabase.table("warga").insert({"nama_kk": n_kk, "nik": n_nik, "alamat": n_alm, "status_rumah": n_sts, "kontak": n_kon, "anggota_keluarga": anggota_list}).execute()
                     st.success("Warga Berhasil Ditambahkan!")
                     st.rerun()
                 else:
-                    st.error("Nama KK dan NIK harus diisi!")
+                    st.error("Nama KK wajib diisi!")
 
         with tab2:
             st.header("⚙️ Kelola Data Warga")
@@ -133,7 +165,6 @@ else:
             
             if warga_pilih != "-- Pilih Warga --":
                 data_edit = df_w_all[df_w_all['nama_kk'] == warga_pilih].iloc[0]
-                
                 e_nama = st.text_input("Edit Nama KK", value=data_edit['nama_kk'])
                 e_nik = st.text_input("Edit NIK", value=data_edit['nik'])
                 e_alm = st.text_input("Edit Alamat", value=data_edit['alamat'])
@@ -143,25 +174,19 @@ else:
                 old_ak = data_edit.get('anggota_keluarga', [])
                 if not isinstance(old_ak, list): old_ak = []
                 
-                st.write("---")
-                e_jml = st.number_input("Jumlah Anggota (Update)", min_value=0, step=1, value=len(old_ak))
+                e_jml = st.number_input("Update Jumlah Anggota", min_value=0, step=1, value=len(old_ak))
                 e_list = []
                 for j in range(int(e_jml)):
                     dn = old_ak[j]['nama'] if j < len(old_ak) else ""
                     ds = old_ak[j]['status'] if j < len(old_ak) else "Istri"
                     ca, cb = st.columns(2)
                     en = ca.text_input(f"Nama Anggota {j+1}", value=dn, key=f"en_{j}")
-                    es = cb.selectbox(f"Status {j+1}", ["Istri", "Anak", "Orang Tua", "Saudara", "Lainnya"], 
-                                      index=["Istri", "Anak", "Orang Tua", "Saudara", "Lainnya"].index(ds) if ds in ["Istri", "Anak", "Orang Tua", "Saudara", "Lainnya"] else 0, 
-                                      key=f"es_{j}")
+                    es = cb.selectbox(f"Status {j+1}", ["Istri", "Anak", "Orang Tua", "Saudara", "Lainnya"], index=["Istri", "Anak", "Orang Tua", "Saudara", "Lainnya"].index(ds) if ds in ["Istri", "Anak", "Orang Tua", "Saudara", "Lainnya"] else 0, key=f"es_{j}")
                     if en: e_list.append({"nama": en, "status": es})
                 
                 col1, col2 = st.columns(2)
                 if col1.button("💾 Update Data"):
-                    supabase.table("warga").update({
-                        "nama_kk": e_nama, "nik": e_nik, "alamat": e_alm, 
-                        "status_rumah": e_sts, "kontak": e_kon, "anggota_keluarga": e_list
-                    }).eq("id", data_edit['id']).execute()
+                    supabase.table("warga").update({"nama_kk": e_nama, "nik": e_nik, "alamat": e_alm, "status_rumah": e_sts, "kontak": e_kon, "anggota_keluarga": e_list}).eq("id", data_edit['id']).execute()
                     st.success("Data Terupdate!")
                     st.rerun()
                 if col2.button("🗑️ HAPUS WARGA"):
@@ -170,24 +195,21 @@ else:
 
         with tab3:
             st.header("🛠️ Koreksi Iuran & Kas")
-            mode_koreksi = st.radio("Pilih Data yang Akan Dikoreksi:", ["Hapus Transaksi Iuran", "Hapus Transaksi Kas"])
-            
-            if mode_koreksi == "Hapus Transaksi Iuran":
-                res_i = supabase.table("iuran").select("*").order("created_at", desc=True).limit(20).execute()
+            mode_koreksi = st.radio("Pilih Data:", ["Hapus Iuran", "Hapus Kas"])
+            if mode_koreksi == "Hapus Iuran":
+                res_i = supabase.table("iuran").select("*").order("created_at", desc=True).limit(15).execute()
                 df_i = pd.DataFrame(res_i.data)
                 if not df_i.empty:
-                    pilih_i = st.selectbox("Pilih Iuran untuk DIHAPUS:", df_i['id'].tolist(), 
-                                           format_func=lambda x: f"ID {x} - {df_i[df_i['id']==x]['nama_warga'].values[0]} ({df_i[df_i['id']==x]['periode'].values[0]})")
-                    if st.button("🚨 HAPUS IURAN"):
+                    pilih_i = st.selectbox("Pilih Iuran:", df_i['id'].tolist(), format_func=lambda x: f"{df_i[df_i['id']==x]['nama_warga'].values[0]} ({df_i[df_i['id']==x]['periode'].values[0]})")
+                    if st.button("🚨 Hapus Transaksi"):
                         supabase.table("iuran").delete().eq("id", pilih_i).execute()
                         st.success("Terhapus!"); st.rerun()
             else:
-                res_k = supabase.table("kas_rt").select("*").order("created_at", desc=True).limit(20).execute()
+                res_k = supabase.table("kas_rt").select("*").order("created_at", desc=True).limit(15).execute()
                 df_k = pd.DataFrame(res_k.data)
                 if not df_k.empty:
-                    pilih_k = st.selectbox("Pilih Kas untuk DIHAPUS:", df_k['id'].tolist(), 
-                                           format_func=lambda x: f"ID {x} - {df_k[df_k['id']==x]['jenis'].values[0]} Rp{df_k[df_k['id']==x]['jumlah'].values[0]}")
-                    if st.button("🚨 HAPUS KAS"):
+                    pilih_k = st.selectbox("Pilih Kas:", df_k['id'].tolist(), format_func=lambda x: f"{df_k[df_k['id']==x]['jenis'].values[0]} Rp{df_k[df_k['id']==x]['jumlah'].values[0]} - {df_k[df_k['id']==x]['keterangan'].values[0]}")
+                    if st.button("🚨 Hapus Kas"):
                         supabase.table("kas_rt").delete().eq("id", pilih_k).execute()
                         st.success("Terhapus!"); st.rerun()
 
