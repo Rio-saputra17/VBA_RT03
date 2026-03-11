@@ -129,36 +129,69 @@ else:
             supabase.table("kas_rt").insert({"jenis": "Masuk", "jumlah": nominal, "keterangan": f"Iuran {pilih_w} - {bln} {thn}"}).execute()
             st.success("Data Sinkron ke Iuran & Kas RT!")
 
-    # --- MENU 5: TAMBAH/EDIT DATA (ADMIN) ---
+        # --- MENU 5: TAMBAH/EDIT DATA (ADMIN) ---
     elif menu == "TAMBAH/EDIT DATA":
-        st.header("📝 Tambah Data Warga Baru")
-        with st.form("form_warga_baru"):
-            n_kk = st.text_input("Nama Kepala Keluarga")
-            n_nik = st.text_input("NIK")
-            n_alm = st.text_input("Alamat")
-            n_sts = st.selectbox("Status", ["Pribadi", "Kontrak"])
-            n_kon = st.text_input("Kontak (WA)")
-            n_jml = st.number_input("Jumlah Anggota Keluarga", min_value=0, step=1)
-            
-            # Logika Otomatis Kolom Anggota
-            anggota_list = []
-            if n_jml > 0:
-                for i in range(int(n_jml)):
-                    st.write(f"Anggota {i+1}")
-                    ca, cb = st.columns(2)
-                    na = ca.text_input(f"Nama Anggota {i+1}", key=f"na_{i}")
-                    ha = cb.selectbox(f"Hubungan {i+1}", ["Istri", "Anak", "Orang Tua", "Saudara", "Lain-lain"], key=f"ha_{i}")
-                    anggota_list.append({"nama_anggota": na, "hubungan": ha})
-            
-            if st.form_submit_button("Simpan Semua Data"):
-                res_warga = supabase.table("warga").insert({"nama_kk": n_kk, "nik": n_nik, "alamat": n_alm, "status_rumah": n_sts, "kontak": n_kon, "jml_anggota": n_jml}).execute()
-                id_kk = res_warga.data[0]['id']
-                if anggota_list:
-                    for a in anggota_list:
-                        a['id_kk'] = id_kk
-                        supabase.table("anggota_keluarga").insert(a).execute()
-                st.success("Data & Keluarga Berhasil Disimpan!")
+        st.header("📝 Kelola Data Warga")
+        
+        aksi = st.radio("Pilih Aksi:", ["Tambah Warga Baru", "Edit Data Warga Lama"], horizontal=True)
 
-    if st.sidebar.button("Logout"):
-        st.session_state.role = None
-        st.rerun()
+        if aksi == "Tambah Warga Baru":
+            with st.form("form_warga_baru"):
+                n_kk = st.text_input("Nama Kepala Keluarga")
+                n_nik = st.text_input("NIK")
+                n_alm = st.text_input("Alamat")
+                n_sts = st.selectbox("Status", ["Pribadi", "Kontrak"])
+                n_kon = st.text_input("Kontak (WA)")
+                n_jml = st.number_input("Jumlah Anggota Keluarga", min_value=0, step=1)
+                
+                anggota_list = []
+                if n_jml > 0:
+                    for i in range(int(n_jml)):
+                        st.write(f"Anggota {i+1}")
+                        ca, cb = st.columns(2)
+                        na = ca.text_input(f"Nama Anggota {i+1}", key=f"na_new_{i}")
+                        ha = cb.selectbox(f"Hubungan {i+1}", ["Istri", "Anak", "Orang Tua", "Saudara", "Lain-lain"], key=f"ha_new_{i}")
+                        anggota_list.append({"nama_anggota": na, "hubungan": ha})
+                
+                if st.form_submit_button("Simpan Data Baru"):
+                    res_warga = supabase.table("warga").insert({"nama_kk": n_kk, "nik": n_nik, "alamat": n_alm, "status_rumah": n_sts, "kontak": n_kon, "jml_anggota": n_jml}).execute()
+                    id_kk = res_warga.data[0]['id']
+                    if anggota_list:
+                        for a in anggota_list:
+                            a['id_kk'] = id_kk
+                            supabase.table("anggota_keluarga").insert(a).execute()
+                    st.success("Data Warga Berhasil Ditambahkan!")
+                    st.rerun()
+
+        elif aksi == "Edit Data Warga Lama":
+            # Ambil daftar warga buat dipilih
+            w_list_raw = supabase.table("warga").select("id, nama_kk").execute()
+            w_options = {w['nama_kk']: w['id'] for w in w_list_raw.data}
+            
+            pilih_edit = st.selectbox("Pilih Nama Warga yang Mau Diedit", list(w_options.keys()))
+            
+            if pilih_edit:
+                # Ambil data lama dari database
+                id_target = w_options[pilih_edit]
+                data_lama = supabase.table("warga").select("*").eq("id", id_target).single().execute().data
+                
+                with st.form("form_edit_warga"):
+                    st.info(f"Mengedit data: {pilih_edit}")
+                    e_nama = st.text_input("Nama Kepala Keluarga", value=data_lama['nama_kk'])
+                    e_nik = st.text_input("NIK", value=data_lama['nik'])
+                    e_alm = st.text_input("Alamat", value=data_lama['alamat'])
+                    # Logika otomatis buat nyesuaiin index selectbox
+                    list_sts = ["Pribadi", "Kontrak"]
+                    idx_sts = list_sts.index(data_lama['status_rumah']) if data_lama['status_rumah'] in list_sts else 0
+                    e_sts = st.selectbox("Status", list_sts, index=idx_sts)
+                    e_kon = st.text_input("Kontak (WA)", value=data_lama['kontak'])
+                    
+                    st.warning("Catatan: Edit anggota keluarga bisa dilakukan di menu warga atau manual di database untuk versi ini.")
+                    
+                    if st.form_submit_button("Update Data Warga"):
+                        supabase.table("warga").update({
+                            "nama_kk": e_nama, "nik": e_nik, "alamat": e_alm, 
+                            "status_rumah": e_sts, "kontak": e_kon
+                        }).eq("id", id_target).execute()
+                        st.success(f"Data {e_nama} Berhasil Diperbarui!")
+                        st.rerun()
