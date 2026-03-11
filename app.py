@@ -184,4 +184,10 @@ else:
                     e_jml = st.number_input("Total Anggota Keluarga", value=int(d['jml_anggota']), min_value=0)
                     
                     if st.form_submit_button("Simpan Perubahan"):
-                        supabase.table("warga").update({"nama_kk": e_nama, "nik": e_nik,
+                        supabase.table("warga").update({"nama_kk": e_nama, "nik": e_nik, "alamat": e_alm, "kontak": e_kon, "jml_anggota": e_jml}).eq("id", id_target).execute()
+                        st.success("Data Diperbarui!")
+                        st.rerun()
+
+    if st.sidebar.button("Logout"):
+        st.session_state.role = None
+        st.rerun()
