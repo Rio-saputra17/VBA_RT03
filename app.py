@@ -1,121 +1,159 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
+from supabase import create_client
 import pandas as pd
 from datetime import datetime
 
-# 1. Setting Tampilan Mobile
-st.set_page_config(page_title="Admin RT 03", layout="wide")
+# --- KONEKSI ---
+url = st.secrets["supabase"]["url"]
+key = st.secrets["supabase"]["key"]
+supabase = create_client(url, key)
 
-def login():
-    if "logged_in" not in st.session_state:
-        st.session_state.logged_in = False
-    if not st.session_state.logged_in:
-        st.subheader("🔐 Login Admin RT 03")
-        pw = st.text_input("Password", type="password")
-        if st.button("Masuk"):
-            if pw == "123":
-                st.session_state.logged_in = True
-                st.rerun()
-            else:
-                st.error("Password Salah!")
-        return False
-    return True
+st.set_page_config(page_title="RT 03 Digital", layout="wide")
 
-if login():
-    try:
-        conn = st.connection("gsheets", type=GSheetsConnection)
+# --- LOGIN ---
+if 'role' not in st.session_state:
+    st.session_state.role = None
 
-        # --- LOGIKA OTOMATIS LOAD & HEADER ---
-        def load_safe(sheet, cols):
-            try:
-                df = conn.read(worksheet=sheet, ttl="0")
-                if df.empty: return pd.DataFrame(columns=cols)
-                return df
-            except:
-                return pd.DataFrame(columns=cols)
+if st.session_state.role is None:
+    st.title("🏡 Sistem Administrasi RT 03")
+    role_pilih = st.selectbox("Masuk Sebagai:", ["Pilih", "Warga", "Admin"])
+    pwd = st.text_input("Password", type="password")
+    if st.button("Login"):
+        if role_pilih == "Admin" and pwd == st.secrets["passwords"]["admin"]:
+            st.session_state.role = "Admin"
+            st.rerun()
+        elif role_pilih == "Warga" and pwd == st.secrets["passwords"]["warga"]:
+            st.session_state.role = "Warga"
+            st.rerun()
+        else:
+            st.error("Password Salah, Ndan!")
+else:
+    role = st.session_state.role
+    st.sidebar.title(f"Menu {role}")
+    
+    # Navigasi Menu Sesuai Permintaan
+    if role == "Admin":
+        menu = st.sidebar.radio("Navigasi", ["WARGA", "IURAN BULANAN", "KAS RT", "INPUT PEMBAYARAN", "TAMBAH/EDIT DATA"])
+    else:
+        menu = st.sidebar.radio("Navigasi", ["WARGA", "IURAN BULANAN", "KAS RT"])
 
-        df_warga = load_safe("Warga", ["nama warga", "Alamat rumah", "status rumah", "Kontak"])
-        df_bayar = load_safe("Data Pembayaran", ["Nama", "Bulan/tahun", "Status"])
-        df_kas = load_safe("Kas RT", ["Masuk", "Keluar", "keterangan", "Sisa Saldo"])
+    # --- MENU 1: WARGA ---
+    if menu == "WARGA":
+        st.header("📋 Data Warga RT 03")
+        search = st.text_input("🔍 Cari Nama Warga (Otomatis)...").lower()
+        
+        # Ambil data warga & anggota keluarga
+        res_w = supabase.table("warga").select("*, anggota_keluarga(*)").execute()
+        df_w = pd.DataFrame(res_w.data)
 
-        # --- NAVIGASI ---
-        st.sidebar.title("RT 03 VBA")
-        menu = st.sidebar.radio("Navigasi", ["Update Warga", "Input Iuran", "History Pembayaran", "Kas RT"])
+        if not df_w.empty:
+            if search:
+                df_w = df_w[df_w['nama_kk'].str.lower().contains(search)]
+            
+            for i, row in df_w.iterrows():
+                with st.expander(f"👤 {row['nama_kk']} - {row['alamat']}"):
+                    st.write(f"**Status:** {row['status_rumah']} | **Kontak:** {row['kontak']}")
+                    if role == "Admin": st.write(f"**NIK:** {row['nik']}")
+                    
+                    st.write(f"**Jumlah Keluarga:** {row['jml_anggota']}")
+                    if row['anggota_keluarga']:
+                        for agg in row['anggota_keluarga']:
+                            st.write(f"- {agg['nama_anggota']} ({agg['hubungan']})")
+            
+            # FITUR DOWNLOAD DATA WARGA
+            st.download_button("📥 Download Data Warga", df_w.to_csv(index=False), "data_warga.csv", "text/csv")
 
-        # 1. MENU UPDATE WARGA (INPUT & EDIT)
-        if menu == "Update Warga":
-            st.header("👥 Update Data Warga")
-            tab1, tab2 = st.tabs(["Tambah Warga", "Edit/Hapus"])
-            with tab1:
-                with st.form("tambah"):
-                    n = st.text_input("Nama Lengkap")
-                    a = st.text_input("Alamat")
-                    s = st.selectbox("Status", ["pribadi", "kontrak"])
-                    k = st.text_input("No Telepon")
-                    if st.form_submit_button("Simpan"):
-                        new_w = pd.DataFrame([{"nama warga": n, "Alamat rumah": a, "status rumah": s, "Kontak": k}])
-                        df_w = pd.concat([df_warga, new_w], ignore_index=True)
-                        conn.update(worksheet="Warga", data=df_w)
-                        st.success("Tersimpan!")
+    # --- MENU 2: IURAN BULANAN ---
+    elif menu == "IURAN BULANAN":
+        st.header("💰 History Iuran Bulanan")
+        search_i = st.text_input("🔍 Cari Nama Pembayar...").lower()
+        res_i = supabase.table("iuran").select("*").execute()
+        df_i = pd.DataFrame(res_i.data)
+        
+        if not df_i.empty:
+            if search_i:
+                df_i = df_i[df_i['nama_warga'].str.lower().contains(search_i)]
+            st.dataframe(df_i, use_container_width=True)
+
+    # --- MENU 3: KAS RT ---
+    elif menu == "KAS RT":
+        st.header("📊 Laporan Kas RT")
+        res_k = supabase.table("kas_rt").select("*").execute()
+        df_k = pd.DataFrame(res_k.data)
+        
+        if not df_k.empty:
+            masuk = df_k[df_k['jenis'] == 'Masuk']['jumlah'].sum()
+            keluar = df_k[df_k['jenis'] == 'Keluar']['jumlah'].sum()
+            saldo = masuk - keluar
+            
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total Masuk", f"Rp {masuk:,}")
+            c2.metric("Total Keluar", f"Rp {keluar:,}")
+            c3.metric("Sisa Saldo", f"Rp {saldo:,}", delta_color="normal")
+            
+            st.bar_chart(df_k.groupby('jenis')['jumlah'].sum())
+            st.table(df_k)
+            
+            # FITUR DOWNLOAD LAPORAN KAS
+            st.download_button("📥 Download Laporan Kas", df_k.to_csv(index=False), "laporan_kas.csv", "text/csv")
+
+            if role == "Admin":
+                st.subheader("➕ Tambah/Kurang Saldo Manual")
+                with st.form("form_kas"):
+                    j_k = st.selectbox("Jenis", ["Masuk", "Keluar"])
+                    u_k = st.number_input("Jumlah Uang", min_value=0)
+                    ket_k = st.text_input("Keterangan")
+                    if st.form_submit_button("Update Kas"):
+                        supabase.table("kas_rt").insert({"jenis": j_k, "jumlah": u_k, "keterangan": ket_k}).execute()
+                        st.success("Kas Berhasil Diupdate!")
                         st.rerun()
-            with tab2:
-                edited = st.data_editor(df_warga, use_container_width=True, num_rows="dynamic")
-                if st.button("Update Seluruh Data"):
-                    conn.update(worksheet="Warga", data=edited)
-                    st.success("Data Berhasil Disinkronkan!")
 
-        # 2. MENU INPUT IURAN (SINKRON KAS)
-        elif menu == "Input Iuran":
-            st.header("💰 Input Pembayaran")
-            if df_warga.empty:
-                st.warning("Isi data warga dulu!")
-            else:
-                with st.form("bayar"):
-                    p_nama = st.selectbox("Pilih Nama", df_warga["nama warga"].unique())
-                    p_bln = st.text_input("Bulan/Tahun", value=datetime.now().strftime("%B %Y"))
-                    p_jml = st.number_input("Jumlah (Rp)", value=20000)
-                    if st.form_submit_button("Simpan & Sinkron"):
-                        # Ke Data Pembayaran
-                        new_b = pd.DataFrame([{"Nama": p_nama, "Bulan/tahun": p_bln, "Status": "Lunas"}])
-                        df_b = pd.concat([df_bayar, new_b], ignore_index=True)
-                        conn.update(worksheet="Data Pembayaran", data=df_b)
-                        # Ke Kas (Otomatis Saldo)
-                        last_s = pd.to_numeric(df_kas["Sisa Saldo"]).iloc[-1] if not df_kas.empty else 0
-                        new_k = pd.DataFrame([{"Masuk": p_jml, "Keluar": 0, "keterangan": f"Iuran {p_bln}-{p_nama}", "Sisa Saldo": last_s + p_jml}])
-                        df_k = pd.concat([df_kas, new_k], ignore_index=True)
-                        conn.update(worksheet="Kas RT", data=df_k)
-                        st.success("Pembayaran Berhasil Dicatat!")
+    # --- MENU 4: INPUT PEMBAYARAN (ADMIN) ---
+    elif menu == "INPUT PEMBAYARAN":
+        st.header("💸 Input Pembayaran Warga")
+        w_list = supabase.table("warga").select("nama_kk").execute()
+        pilih_w = st.selectbox("Cari & Pilih Nama", [w['nama_kk'] for w in w_list.data])
+        bln = st.selectbox("Bulan", ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"])
+        thn = st.selectbox("Tahun", [2025, 2026, 2027])
+        nominal = st.number_input("Nominal Iuran", value=50000)
+        
+        if st.button("Simpan & Sinkronkan"):
+            # Sinkron ke Iuran
+            supabase.table("iuran").insert({"nama_warga": pilih_w, "periode": f"{bln} {thn}", "status": "Lunas"}).execute()
+            # Sinkron ke Kas
+            supabase.table("kas_rt").insert({"jenis": "Masuk", "jumlah": nominal, "keterangan": f"Iuran {pilih_w} - {bln} {thn}"}).execute()
+            st.success("Data Sinkron ke Iuran & Kas RT!")
 
-        # 3. MENU HISTORY
-        elif menu == "History Pembayaran":
-            st.header("📊 History Iuran")
-            st.dataframe(df_bayar, use_container_width=True)
-
-        # 4. MENU KAS (EDIT & SINKRON)
-        elif menu == "Kas RT":
-            st.header("📈 Keuangan RT")
-            t_masuk = pd.to_numeric(df_kas["Masuk"]).sum()
-            t_keluar = pd.to_numeric(df_kas["Keluar"]).sum()
-            st.metric("Total Sisa Saldo", f"Rp {t_masuk - t_keluar:,.0f}")
-            st.divider()
-            with st.expander("Input Pengeluaran Manual"):
-                with st.form("keluar"):
-                    k_jml = st.number_input("Jumlah Keluar")
-                    k_ket = st.text_input("Keterangan")
-                    if st.form_submit_button("Simpan Pengeluaran"):
-                        last_s = t_masuk - t_keluar
-                        new_out = pd.DataFrame([{"Masuk": 0, "Keluar": k_jml, "keterangan": k_ket, "Sisa Saldo": last_s - k_jml}])
-                        df_ko = pd.concat([df_kas, new_out], ignore_index=True)
-                        conn.update(worksheet="Kas RT", data=df_ko)
-                        st.success("Pengeluaran Tercatat!")
-                        st.rerun()
-            st.dataframe(df_kas, use_container_width=True)
-
-    except Exception as e:
-        st.error("⚠️ Cek Nama Tab Sheets Bos!")
-        st.write("Wajib ada tab: Warga, Data Pembayaran, Kas RT")
-        st.code(str(e))
+    # --- MENU 5: TAMBAH/EDIT DATA (ADMIN) ---
+    elif menu == "TAMBAH/EDIT DATA":
+        st.header("📝 Tambah Data Warga Baru")
+        with st.form("form_warga_baru"):
+            n_kk = st.text_input("Nama Kepala Keluarga")
+            n_nik = st.text_input("NIK")
+            n_alm = st.text_input("Alamat")
+            n_sts = st.selectbox("Status", ["Pribadi", "Kontrak"])
+            n_kon = st.text_input("Kontak (WA)")
+            n_jml = st.number_input("Jumlah Anggota Keluarga", min_value=0, step=1)
+            
+            # Logika Otomatis Kolom Anggota
+            anggota_list = []
+            if n_jml > 0:
+                for i in range(int(n_jml)):
+                    st.write(f"Anggota {i+1}")
+                    ca, cb = st.columns(2)
+                    na = ca.text_input(f"Nama Anggota {i+1}", key=f"na_{i}")
+                    ha = cb.selectbox(f"Hubungan {i+1}", ["Istri", "Anak", "Orang Tua", "Saudara", "Lain-lain"], key=f"ha_{i}")
+                    anggota_list.append({"nama_anggota": na, "hubungan": ha})
+            
+            if st.form_submit_button("Simpan Semua Data"):
+                res_warga = supabase.table("warga").insert({"nama_kk": n_kk, "nik": n_nik, "alamat": n_alm, "status_rumah": n_sts, "kontak": n_kon, "jml_anggota": n_jml}).execute()
+                id_kk = res_warga.data[0]['id']
+                if anggota_list:
+                    for a in anggota_list:
+                        a['id_kk'] = id_kk
+                        supabase.table("anggota_keluarga").insert(a).execute()
+                st.success("Data & Keluarga Berhasil Disimpan!")
 
     if st.sidebar.button("Logout"):
-        st.session_state.logged_in = False
+        st.session_state.role = None
         st.rerun()
